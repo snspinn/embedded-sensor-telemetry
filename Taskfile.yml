@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  build:firmware:
+    dir: firmware
+    cmds:
+      - cargo build --bin hello
+
+  build:ingestor:
+    cmds:
+      - cargo build --package ingestor
+
+  build:
+    deps: [build:firmware, build:ingestor]
+
+  test:firmware:
+    dir: firmware
+    cmds:
+      - cargo test --test integration
+
+  test:
+    deps: [test:firmware,]
