@@ -1,0 +1,6 @@
+[workspace]
+resolver = "3"
+members = ["firmware", "protocol", "ingestor"]
+
+[workspace.dependencies]
+protocol = { path = "protocol" }
