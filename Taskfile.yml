@@ -12,3 +12,11 @@ tasks:
 
   build:
     deps: [build:firmware, build:ingestor]
+
+  test:firmware:
+    dir: firmware
+    cmds:
+      - cargo test --test integration
+
+  test:
+    deps: [test:firmware,]
