@@ -25,7 +25,7 @@ source "$HOME/.cargo/env" 2>/dev/null || true
 
 # ── Embedded target ───────────────────────────────────────────────────────────
 # Change this to match your target (thumbv6m, thumbv7em-none-eabihf, etc.)
-TARGET="${EMBED_TARGET:-thumbv6m-none-eabi}"
+TARGET="${EMBED_TARGET:-thumbv7em-none-eabihf}"
 info "Adding Rust target: $TARGET"
 rustup target add "$TARGET"
 
