@@ -1,84 +1,35 @@
 [package]
-# TODO(1) fix `authors` and `name` if you didn't use `cargo-generate`
 authors = ["Samuel Spinn <sspinn@netfeasa.com>"]
 name = "firmware"
 edition = "2024"
 version = "0.1.0"
-
-
-# To run all the tests via `cargo test` the tests need to be explicitly disabled for the binary targets
-# If you use a standard main.rs file the following is sufficient:
-# [[bin]]
-# name = "firmware"
-# test = false
-
-[[bin]]
-name = "bitfield"
-path = "src/bin/bitfield.rs"
-test = false
-
-[[bin]]
-name = "format"
-path = "src/bin/format.rs"
-test = false
-
-[[bin]]
-name = "hello"
-path = "src/bin/hello.rs"
-test = false
-
-[[bin]]
-name = "levels"
-path = "src/bin/levels.rs"
-test = false
-
-[[bin]]
-name = "overflow"
-path = "src/bin/overflow.rs"
-test = false
-
-[[bin]]
-name = "panic"
-path = "src/bin/panic.rs"
-test = false
-
-[lib]
-harness = false
-
-# needed for each integration test
-[[test]]
-name = "integration"
-harness = false
+license = "MIT OR Apache-2.0"
+publish = false
 
 [dependencies]
-cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
-cortex-m-rt = "0.7"
-defmt = "1.0"
-defmt-rtt = "1.0"
-panic-probe = { version = "1.0", features = ["print-defmt"] }
-semihosting = "0.1.20"
-stm32f3xx-hal = { version = "0.10.0", features = ["ld", "rt", "stm32f303xc"] }
+embassy-stm32 = { version = "0.6.0", path = "../../embassy-stm32", features = [ "defmt", "stm32f303vc", "unstable-pac", "memory-x", "time-driver-tim2", "exti"]  }
+embassy-sync = { version = "0.8.0", path = "../../embassy-sync", features = ["defmt"] }
+embassy-executor = { version = "0.10.0", path = "../../embassy-executor", features = ["platform-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-time = { version = "0.5.1", path = "../../embassy-time", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
+embassy-usb = { version = "0.6.0", path = "../../embassy-usb", features = ["defmt"] }
+embassy-futures = { version = "0.1.2", path = "../../embassy-futures" }
 
-[dev-dependencies]
-defmt-test = "0.3"
+defmt = "1.0.1"
+defmt-rtt = "1.0.0"
 
-# cargo build/run
-[profile.dev]
-# default is opt-level = '0', but that makes very
-# verbose machine code
-opt-level = 's'
-# trade compile speed for slightly better optimisations
-codegen-units = 1
+cortex-m = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }
+cortex-m-rt = "0.7.0"
+embedded-hal = "0.2.6"
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+heapless = { version = "0.9", default-features = false }
+nb = "1.0.0"
+embedded-storage = "0.3.1"
+static_cell = "2"
 
-# cargo build/run --release
 [profile.release]
-# default is opt-level = '3', but that makes quite
-# verbose machine code
-opt-level = 's'
-# trade compile speed for slightly better optimisations
-codegen-units = 1
-# Use Link Time Optimisations to further inline things across
-# crates
-lto = 'fat'
-# Leave the debug symbols in (default is no debug info)
 debug = 2
+
+[package.metadata.embassy]
+build = [
+  { target = "thumbv7em-none-eabihf", artifact-dir = "out/examples/stm32f3" }
+]
