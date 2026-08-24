@@ -1,11 +1,20 @@
-#![no_main]
 #![no_std]
+#![no_main]
 
-use firmware as _; // global logger + panicking-behavior + memory layout
+use defmt::info;
+use defmt_rtt as _;
+use embassy_executor::Spawner;
+use embassy_stm32::Config;
+use embassy_time::Timer;
+use panic_probe as _;
 
-#[cortex_m_rt::entry]
-fn main() -> ! {
-    defmt::println!("Hello, world!");
+#[embassy_executor::main]
+async fn main(_spawner: Spawner) -> ! {
+    let config = Config::default();
+    let _p = embassy_stm32::init(config);
 
-    firmware::exit()
+    loop {
+        info!("Hello World!");
+        Timer::after_secs(1).await;
+    }
 }
