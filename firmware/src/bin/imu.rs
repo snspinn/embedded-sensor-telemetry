@@ -4,6 +4,8 @@
 use defmt::*;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
+use embassy_stm32::Peri;
+use embassy_stm32::Peripherals;
 use embassy_stm32::i2c::Config as I2cConfig;
 use embassy_stm32::i2c::mode::Master as I2cMaster;
 use embassy_stm32::mode::Async;
@@ -51,7 +53,7 @@ struct Vec3 {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let p = embassy_stm32::init(Default::default());
+    let mut p = embassy_stm32::init(Default::default());
 
     /* Set up the gyroscope */
     // PE3 = CS, active low
@@ -79,23 +81,16 @@ async fn main(_spawner: Spawner) {
     let mut gyro_buf = [0u8; 7]; // 1 cmd byte + 6 data bytes
 
     /* Set up the accelerometer */
-    let mut accel_config = I2cConfig::default();
-    accel_config.frequency = Hertz(400_000);
     // PB6 = SCL, PB7 = SDA (hardwired on F3 Discovery)
-    let mut accel_i2c = I2c::new(
-        p.I2C1,
-        p.PB6,      // SCL
-        p.PB7,      // SDA
-        p.DMA1_CH6, // TX DMA
-        p.DMA1_CH7, // RX DMA
-        AccelInterrupts,
-        accel_config,
-    );
+    let mut accel_i2c = configure_accel(
+        p.I2C1.reborrow(),
+        p.PB6.reborrow(),
+        p.PB7.reborrow(),
+        p.DMA1_CH6.reborrow(),
+        p.DMA1_CH7.reborrow(),
+    )
+    .await;
     // Enable accelerometer: 100 Hz, all axes on (0x57)
-    accel_i2c
-        .write(ACCEL_ADDR, &[CTRL_REG1_A, 0x57])
-        .await
-        .unwrap();
     let mut accel_buf = [0u8; 6];
 
     loop {
@@ -140,4 +135,39 @@ async fn read_gyro<'a>(
 
     // At 250 dps range: 1 LSB ≈ 8.75 mdps
     Vec3 { x, y, z }
+}
+
+/// Configure accelerometer peripherals. Calling this will require using `reborrow()`.
+///
+/// Usage example:
+/// ```rust
+/// let mut p = embassy_stm32::init(Default::default());
+///
+/// let i2c = configure_accel(
+///    p.I2C1.reborrow(),
+///    p.PB6.reborrow(),
+///    p.PB7.reborrow(),
+///    p.DMA1_CH6.reborrow(),
+///    p.DMA1_CH7.reborrow(),
+/// ).await;
+/// ```
+async fn configure_accel<'d>(
+    i2c: Peri<'d, peripherals::I2C1>,
+    scl: Peri<'d, peripherals::PB6>,
+    sda: Peri<'d, peripherals::PB7>,
+    tx_dma: Peri<'d, peripherals::DMA1_CH6>,
+    rx_dma: Peri<'d, peripherals::DMA1_CH7>,
+) -> I2c<'d, Async, I2cMaster> {
+    let mut config = I2cConfig::default();
+    config.frequency = Hertz(400_000);
+    let mut accel_i2c = I2c::new(i2c, scl, sda, tx_dma, rx_dma, AccelInterrupts, config);
+    accel_i2c
+        .write(ACCEL_ADDR, &[CTRL_REG1_A, 0x57])
+        .await
+        .unwrap();
+    accel_i2c
+}
+
+async fn configure_gryo() {
+    // configure the gyro
 }
