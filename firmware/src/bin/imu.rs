@@ -5,8 +5,9 @@ use defmt::*;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_stm32::i2c::Config as I2cConfig;
-use embassy_stm32::i2c::mode::Master;
+use embassy_stm32::i2c::mode::Master as I2cMaster;
 use embassy_stm32::mode::Async;
+use embassy_stm32::spi::mode::Master as SPIMaster;
 use embassy_stm32::{
     bind_interrupts, dma,
     gpio::{Level, Output, Speed},
@@ -98,30 +99,15 @@ async fn main(_spawner: Spawner) {
     let mut accel_buf = [0u8; 6];
 
     loop {
-        /* Read gyro */
-        // Read 6 bytes starting at OUT_X_L with auto-increment
-        let cmd = READ_FLAG | AUTO_INC | OUT_X_L;
-        let tx = [cmd, 0, 0, 0, 0, 0, 0];
-
-        gyro_cs.set_low();
-        gyro_spi.transfer(&mut gyro_buf, &tx).await.unwrap();
-        gyro_cs.set_high();
-
-        // gyro_buf[0] is the dummy byte clocked out during cmd phase
-        let x = i16::from_le_bytes([gyro_buf[1], gyro_buf[2]]);
-        let y = i16::from_le_bytes([gyro_buf[3], gyro_buf[4]]);
-        let z = i16::from_le_bytes([gyro_buf[5], gyro_buf[6]]);
-
-        // At 250 dps range: 1 LSB ≈ 8.75 mdps
-        info!("Gyro  x={} raw  y={} raw  z={} raw", x, y, z);
-
+        let gyro = read_gyro(&mut gyro_spi, &mut gyro_cs, &mut gyro_buf).await;
+        let accel = read_accel(&mut accel_i2c, &mut accel_buf).await;
+        info!("Gyro {}", gyro);
+        info!("Accel {}", accel);
         Timer::after_millis(100).await;
-
-        let accel = read_accel(&mut accel_i2c, &mut accel_buf);
     }
 }
 
-async fn read_accel(i2c: &mut I2c<'_, Async, Master>, buf: &mut [u8]) -> Vec3 {
+async fn read_accel(i2c: &mut I2c<'_, Async, I2cMaster>, buf: &mut [u8]) -> Vec3 {
     // Write register address, then read 6 bytes (X_L, X_H, Y_L, Y_H, Z_L, Z_H)
     i2c.write_read(ACCEL_ADDR, &[OUT_X_L_A], buf).await.unwrap();
 
@@ -131,5 +117,27 @@ async fn read_accel(i2c: &mut I2c<'_, Async, Master>, buf: &mut [u8]) -> Vec3 {
 
     // At ±2g range: 1 LSB = 1 mg
     info!("Accel  x={} mg  y={} mg  z={} mg", x, y, z);
+    Vec3 { x, y, z }
+}
+
+async fn read_gyro<'a>(
+    spi: &mut Spi<'_, Async, SPIMaster>,
+    cs: &mut Output<'a>,
+    buf: &mut [u8],
+) -> Vec3 {
+    // Read 6 bytes starting at OUT_X_L with auto-increment
+    let cmd = READ_FLAG | AUTO_INC | OUT_X_L;
+    let tx = [cmd, 0, 0, 0, 0, 0, 0];
+
+    cs.set_low();
+    spi.transfer(buf, &tx).await.unwrap();
+    cs.set_high();
+
+    // buf[0] is the dummy byte clocked out during cmd phase
+    let x = i16::from_le_bytes([buf[1], buf[2]]);
+    let y = i16::from_le_bytes([buf[3], buf[4]]);
+    let z = i16::from_le_bytes([buf[5], buf[6]]);
+
+    // At 250 dps range: 1 LSB ≈ 8.75 mdps
     Vec3 { x, y, z }
 }
