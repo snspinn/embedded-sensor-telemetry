@@ -167,7 +167,3 @@ async fn configure_accel<'d>(
         .unwrap();
     accel_i2c
 }
-
-async fn configure_gryo() {
-    // configure the gyro
-}
