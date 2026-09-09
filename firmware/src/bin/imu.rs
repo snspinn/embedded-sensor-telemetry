@@ -52,8 +52,11 @@ struct Vec3 {
 }
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(Default::default());
+
+    let heartbeat_led = Output::new(p.PE9, Level::Low, Speed::Low); // N, red
+    spawner.spawn(heartbeat(heartbeat_led).unwrap());
 
     /* Set up the gyroscope */
     // PE3 = CS, active low
@@ -166,4 +169,15 @@ async fn configure_accel<'d>(
         .await
         .unwrap();
     accel_i2c
+}
+
+#[embassy_executor::task]
+async fn heartbeat(mut led: Output<'static>) {
+    // 10 second heartbeat
+    loop {
+        led.set_high();
+        Timer::after_millis(100).await;
+        led.set_low();
+        Timer::after_millis(9900).await;
+    }
 }
