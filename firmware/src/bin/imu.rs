@@ -4,6 +4,7 @@
 use defmt::*;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
+use embassy_futures::join::join;
 use embassy_stm32::Peri;
 use embassy_stm32::Peripherals;
 use embassy_stm32::i2c::Config as I2cConfig;
@@ -49,6 +50,12 @@ struct Vec3 {
     x: i16,
     y: i16,
     z: i16,
+}
+
+#[derive(defmt::Format)]
+struct CombinedImu {
+    accel: Vec3,
+    gyro: Vec3,
 }
 
 #[embassy_executor::main]
@@ -97,10 +104,14 @@ async fn main(spawner: Spawner) {
     let mut accel_buf = [0u8; 6];
 
     loop {
-        let gyro = read_gyro(&mut gyro_spi, &mut gyro_cs, &mut gyro_buf).await;
-        let accel = read_accel(&mut accel_i2c, &mut accel_buf).await;
-        info!("Gyro {}", gyro);
-        info!("Accel {}", accel);
+        let (accel, gyro) = join(
+            read_accel(&mut accel_i2c, &mut accel_buf),
+            read_gyro(&mut gyro_spi, &mut gyro_cs, &mut gyro_buf),
+        )
+        .await;
+
+        let imu = CombinedImu { accel, gyro };
+        info!("IMU {}", imu);
         Timer::after_millis(100).await;
     }
 }
