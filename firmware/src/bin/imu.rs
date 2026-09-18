@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+use ahrs::{Ahrs, Madgwick};
 use defmt::*;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
@@ -20,6 +21,7 @@ use embassy_stm32::{
     time::Hertz,
 };
 use embassy_time::Timer;
+use nalgebra::Vector3;
 use panic_probe as _;
 
 // LSM303DLHC accelerometer I2C address and registers
