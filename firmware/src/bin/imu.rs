@@ -28,6 +28,10 @@ use panic_probe as _;
 const ACCEL_ADDR: u8 = 0x19;
 const CTRL_REG1_A: u8 = 0x20; // enable all axes, 100 Hz ODR
 const OUT_X_L_A: u8 = 0x28 | 0x80; // 0x80 = auto-increment bit
+const MAG_ADDR: u8 = 0x1E;
+const CRA_REG_M: u8 = 0x00;
+const MR_REG_M: u8 = 0x02;
+const OUT_X_H_M: u8 = 0x03;
 
 bind_interrupts!(struct AccelInterrupts {
     I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
@@ -92,9 +96,12 @@ async fn main(spawner: Spawner) {
     gyro_cs.set_high();
     let mut gyro_buf = [0u8; 7]; // 1 cmd byte + 6 data bytes
 
-    /* Set up the accelerometer */
+    /* Set up the accelerometer & magnetometer */
+    let mut config = I2cConfig::default();
+    config.frequency = Hertz(400_000);
     // PB6 = SCL, PB7 = SDA (hardwired on F3 Discovery)
-    let mut accel_i2c = configure_accel(
+    let mut i2c = configure_accel(
+        config,
         p.I2C1.reborrow(),
         p.PB6.reborrow(),
         p.PB7.reborrow(),
@@ -102,12 +109,16 @@ async fn main(spawner: Spawner) {
         p.DMA1_CH7.reborrow(),
     )
     .await;
-    // Enable accelerometer: 100 Hz, all axes on (0x57)
     let mut accel_buf = [0u8; 6];
+    /* Set up the magnetometer */
+    // Configure magnetometer: 15 Hz ODR, continuous mode
+    i2c.write(MAG_ADDR, &[CRA_REG_M, 0x10]).await.unwrap();
+    i2c.write(MAG_ADDR, &[MR_REG_M, 0x00]).await.unwrap();
+    let mut mag_buf = [0u8; 6];
 
     loop {
-        let (accel, gyro) = join(
-            read_accel(&mut accel_i2c, &mut accel_buf),
+        let ((accel, mag), gyro) = join(
+            read_i2c_sensors(&mut i2c, (&mut accel_buf, &mut mag_buf)),
             read_gyro(&mut gyro_spi, &mut gyro_cs, &mut gyro_buf),
         )
         .await;
@@ -118,17 +129,40 @@ async fn main(spawner: Spawner) {
     }
 }
 
-async fn read_accel(i2c: &mut I2c<'_, Async, I2cMaster>, buf: &mut [u8]) -> Vec3 {
+async fn read_i2c_sensors(
+    i2c: &mut I2c<'_, Async, I2cMaster>,
+    buf: (&mut [u8], &mut [u8]),
+) -> (Vec3, Vec3) {
     // Write register address, then read 6 bytes (X_L, X_H, Y_L, Y_H, Z_L, Z_H)
-    i2c.write_read(ACCEL_ADDR, &[OUT_X_L_A], buf).await.unwrap();
+    i2c.write_read(ACCEL_ADDR, &[OUT_X_L_A], buf.0)
+        .await
+        .unwrap();
 
-    let x = i16::from_le_bytes([buf[0], buf[1]]) >> 4; // 12-bit left-justified
-    let y = i16::from_le_bytes([buf[2], buf[3]]) >> 4;
-    let z = i16::from_le_bytes([buf[4], buf[5]]) >> 4;
-
+    let a_x = i16::from_le_bytes([buf.0[0], buf.0[1]]) >> 4; // 12-bit left-justified
+    let a_y = i16::from_le_bytes([buf.0[2], buf.0[3]]) >> 4;
+    let a_z = i16::from_le_bytes([buf.0[4], buf.0[5]]) >> 4;
     // At ±2g range: 1 LSB = 1 mg
-    info!("Accel  x={} mg  y={} mg  z={} mg", x, y, z);
-    Vec3 { x, y, z }
+    debug!("Accel  x={} mg  y={} mg  z={} mg", a_x, a_y, a_z);
+
+    i2c.write_read(MAG_ADDR, &[OUT_X_H_M], buf.1).await.unwrap();
+    // LSM303DLHC byte order: X_H, X_L, Z_H, Z_L, Y_H, Y_L
+    let m_x = i16::from_be_bytes([buf.1[0], buf.1[1]]);
+    let m_z = i16::from_be_bytes([buf.1[2], buf.1[3]]);
+    let m_y = i16::from_be_bytes([buf.1[4], buf.1[5]]);
+    debug!("Mag raw  X={}  Y={}  Z={}", m_x, m_y, m_z);
+
+    (
+        Vec3 {
+            x: a_x,
+            y: a_y,
+            z: a_z,
+        },
+        Vec3 {
+            x: m_x,
+            y: m_y,
+            z: m_z,
+        },
+    )
 }
 
 async fn read_gyro<'a>(
@@ -168,15 +202,15 @@ async fn read_gyro<'a>(
 /// ).await;
 /// ```
 async fn configure_accel<'d>(
+    config: i2c::Config,
     i2c: Peri<'d, peripherals::I2C1>,
     scl: Peri<'d, peripherals::PB6>,
     sda: Peri<'d, peripherals::PB7>,
     tx_dma: Peri<'d, peripherals::DMA1_CH6>,
     rx_dma: Peri<'d, peripherals::DMA1_CH7>,
 ) -> I2c<'d, Async, I2cMaster> {
-    let mut config = I2cConfig::default();
-    config.frequency = Hertz(400_000);
     let mut accel_i2c = I2c::new(i2c, scl, sda, tx_dma, rx_dma, AccelInterrupts, config);
+    // Enable accelerometer: 100 Hz, all axes on (0x57)
     accel_i2c
         .write(ACCEL_ADDR, &[CTRL_REG1_A, 0x57])
         .await
