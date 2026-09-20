@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+use core::fmt::Debug;
+
 use ahrs::{Ahrs, Madgwick};
 use defmt::*;
 use defmt_rtt as _;
@@ -115,6 +117,7 @@ async fn main(spawner: Spawner) {
     i2c.write(MAG_ADDR, &[CRA_REG_M, 0x10]).await.unwrap(); // 15 Hz ODR
     i2c.write(MAG_ADDR, &[CRB_REG_M, 0x20]).await.unwrap(); // gain GN=001 → ±1.3 Gauss full-scale (most sensitive)
     i2c.write(MAG_ADDR, &[MR_REG_M, 0x00]).await.unwrap(); // continuous conversion
+    Timer::after_millis(100).await; // ← wait for first conversion
     let mut mag_buf = [0u8; 6];
 
     let mut ahrs = Madgwick::default();
@@ -125,8 +128,18 @@ async fn main(spawner: Spawner) {
         )
         .await;
 
+        if mag.norm() < 1e-3 {
+            error!("Degenerate mag vector: {:?}", (mag.x, mag.y, mag.z));
+            continue; // don't feed bad data into the filter
+        }
         // Run inputs through AHRS filter (gyroscope must be radians/s)
-        let quat = ahrs.update(&gyro, &accel, &mag).unwrap();
+        let quat = match ahrs.update(&gyro, &accel, &mag) {
+            Ok(quat) => quat,
+            Err(e) => {
+                warn!("AHRS update failed");
+                continue;
+            }
+        };
         let (roll, pitch, yaw) = quat.euler_angles();
         // Do something with the updated state quaternion
         println!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
