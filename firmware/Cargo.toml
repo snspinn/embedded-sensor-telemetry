@@ -26,6 +26,9 @@ nb = "1.0.0"
 embedded-storage = "0.3.1"
 static_cell = "2"
 
+ahrs = { version = "0.8", default-features = false }
+nalgebra = { version = "0.34.2", default-features = false }
+
 [profile.release]
 debug = 2
 
