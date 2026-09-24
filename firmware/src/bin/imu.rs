@@ -33,14 +33,12 @@ const CTRL_REG1_A: u8 = 0x20; // enable all axes, 100 Hz ODR
 const CTRL_REG4_A: u8 = 0x23;
 const OUT_X_L_A: u8 = 0x28 | 0x80; // 0x80 = auto-increment bit
 const MAG_ADDR: u8 = 0x1E;
-const CRA_REG_M: u8 = 0x00;
-const MR_REG_M: u8 = 0x02;
-const OUT_X_H_M: u8 = 0x03;
-const CRB_REG_M: u8 = 0x01; // mag gain register
+const CFG_REG_A_M: u8 = 0x60;
+const CFG_REG_C_M: u8 = 0x62;
+const OUTX_L_REG_M: u8 = 0x68;
 
 // Conversion factors
-const MAG_XY_GAIN: f64 = 1100.0; // LSB/Gauss, GN=001 (default)
-const MAG_Z_GAIN: f64 = 980.0; // LSB/Gauss, GN=001 — Z is different!
+const MAG_SENS: f64 = 0.0015; // gauss per LSB, same on all axes, no gain setting
 const ACCEL_SENS: f64 = 0.001; // g/LSB at ±2g (1 mg/LSB)
 const G: f64 = 9.80665; // m/s²
 const GYRO_SENS: f64 = 8.75e-3; // dps/LSB at ±250 dps
@@ -108,15 +106,25 @@ async fn main(spawner: Spawner) {
         AccelInterrupts,
         config,
     );
+
+    // Print out chip details
+    let mut id = [0u8; 1];
+    match i2c.write_read(MAG_ADDR, &[0x4F], &mut id).await {
+        Ok(()) => info!("WHO_AM_I_M = {:#04x} (0x40 means LSM303AGR)", id[0]),
+        Err(e) => warn!("WHO_AM_I_M read failed: {:?}", e),
+    }
+
     // -- Accelerometer init --  100 Hz, all axes on (0x57)
     i2c.write(ACCEL_ADDR, &[CTRL_REG1_A, 0x57]).await.unwrap(); // 100 HZ, all axes on
     i2c.write(ACCEL_ADDR, &[CTRL_REG4_A, 0x08]).await.unwrap(); // ±2g full-scale, high-res mode (HR bit)
 
     let mut accel_buf = [0u8; 6];
     // -- Magnetometer init --
-    i2c.write(MAG_ADDR, &[CRA_REG_M, 0x10]).await.unwrap(); // 15 Hz ODR
-    i2c.write(MAG_ADDR, &[CRB_REG_M, 0x20]).await.unwrap(); // gain GN=001 → ±1.3 Gauss full-scale (most sensitive)
-    i2c.write(MAG_ADDR, &[MR_REG_M, 0x00]).await.unwrap(); // continuous conversion
+    // Temperature compensation on, 10 Hz, continuous mode
+    i2c.write(MAG_ADDR, &[CFG_REG_A_M, 0x80]).await.unwrap();
+    // Block data update, so the high and low bytes always come from the same sample
+    i2c.write(MAG_ADDR, &[CFG_REG_C_M, 0x10]).await.unwrap();
+
     Timer::after_millis(100).await; // ← wait for first conversion
     let mut mag_buf = [0u8; 6];
 
@@ -163,14 +171,15 @@ async fn read_i2c_sensors(
         (i16::from_le_bytes([buf.0[4], buf.0[5]]) >> 4) as f64 * ACCEL_SENS * G,
     );
 
-    i2c.write_read(MAG_ADDR, &[OUT_X_H_M], buf.1).await.unwrap();
-
+    i2c.write_read(MAG_ADDR, &[OUTX_L_REG_M], buf.1)
+        .await
+        .unwrap();
     // Note LSM303DLHC magnetometer output byte order (Z before Y):
     //   X_H, X_L, Z_H, Z_L, Y_H, Y_L
     let mag = Vector3::new(
-        i16::from_be_bytes([buf.1[0], buf.1[1]]) as f64 / MAG_XY_GAIN,
-        i16::from_be_bytes([buf.1[4], buf.1[5]]) as f64 / MAG_XY_GAIN,
-        i16::from_be_bytes([buf.1[2], buf.1[3]]) as f64 / MAG_Z_GAIN,
+        i16::from_le_bytes([buf.1[0], buf.1[1]]) as f64 * MAG_SENS,
+        i16::from_le_bytes([buf.1[2], buf.1[3]]) as f64 * MAG_SENS,
+        i16::from_le_bytes([buf.1[4], buf.1[5]]) as f64 * MAG_SENS,
     );
 
     (accel, mag)
