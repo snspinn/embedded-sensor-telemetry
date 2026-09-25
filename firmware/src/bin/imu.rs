@@ -1,15 +1,11 @@
 #![no_std]
 #![no_main]
 
-use core::fmt::Debug;
-
 use ahrs::{Ahrs, Madgwick};
 use defmt::*;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
-use embassy_stm32::Peri;
-use embassy_stm32::Peripherals;
 use embassy_stm32::i2c::Config as I2cConfig;
 use embassy_stm32::i2c::mode::Master as I2cMaster;
 use embassy_stm32::mode::Async;
@@ -18,16 +14,15 @@ use embassy_stm32::{
     bind_interrupts, dma,
     gpio::{Level, Output, Speed},
     i2c::{self, I2c},
-    interrupt, peripherals,
-    spi::{self, BitOrder, Config as SpiConfig, MODE_3, Spi},
+    peripherals,
+    spi::{BitOrder, Config as SpiConfig, MODE_3, Spi},
     time::Hertz,
 };
 use embassy_time::Timer;
-use nalgebra::Vector;
 use nalgebra::Vector3;
 use panic_probe as _;
 
-// LSM303DLHC accelerometer I2C address and registers
+// LSM303AGR accelerometer I2C address and registers
 const ACCEL_ADDR: u8 = 0x19;
 const CTRL_REG1_A: u8 = 0x20; // enable all axes, 100 Hz ODR
 const CTRL_REG4_A: u8 = 0x23;
@@ -143,7 +138,7 @@ async fn main(spawner: Spawner) {
         // Run inputs through AHRS filter (gyroscope must be radians/s)
         let quat = match ahrs.update(&gyro, &accel, &mag) {
             Ok(quat) => quat,
-            Err(e) => {
+            Err(_e) => {
                 warn!("AHRS update failed");
                 continue;
             }
