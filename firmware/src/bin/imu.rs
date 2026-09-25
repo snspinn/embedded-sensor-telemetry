@@ -59,7 +59,27 @@ bind_interrupts!(struct GyroInterrupts {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = embassy_stm32::init(Default::default());
+    // -- init RCC USB output (for data streaming) --
+    let mut config = embassy_stm32::Config::default();
+    {
+        use embassy_stm32::rcc::*;
+        use embassy_stm32::time::mhz;
+        config.rcc.hse = Some(Hse {
+            freq: mhz(8),
+            mode: HseMode::Bypass,
+        });
+        config.rcc.pll = Some(Pll {
+            src: PllSource::HSE,
+            prediv: PllPreDiv::DIV1,
+            mul: PllMul::MUL9,
+        }); // 72 MHz
+        config.rcc.sys = Sysclk::PLL1_P;
+        config.rcc.ahb_pre = AHBPrescaler::DIV1;
+        config.rcc.apb1_pre = APBPrescaler::DIV2; // APB1 is limited to 36 MHz
+        config.rcc.apb2_pre = APBPrescaler::DIV1;
+    }
+    let p = embassy_stm32::init(config);
+    // let p = embassy_stm32::init(Default::default());
 
     let heartbeat_led = Output::new(p.PE9, Level::Low, Speed::Low); // N, red
     spawner.spawn(heartbeat(heartbeat_led).unwrap());
