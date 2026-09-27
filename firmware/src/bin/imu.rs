@@ -18,7 +18,7 @@ use embassy_stm32::{
     spi::{BitOrder, Config as SpiConfig, MODE_3, Spi},
     time::Hertz,
 };
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use nalgebra::Vector3;
 use panic_probe as _;
 use postcard;
@@ -177,7 +177,7 @@ async fn main(spawner: Spawner) {
         // Do something with the updated state quaternion
         info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
         let t_frame: TelemetryFrame = TelemetryFrame {
-            t_ms: 123445u64,
+            t_ms: Instant::now().as_millis(),
             roll,
             pitch,
             yaw,
