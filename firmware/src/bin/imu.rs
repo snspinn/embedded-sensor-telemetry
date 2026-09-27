@@ -21,6 +21,8 @@ use embassy_stm32::{
 use embassy_time::Timer;
 use nalgebra::Vector3;
 use panic_probe as _;
+use postcard;
+use serde::{Deserialize, Serialize};
 
 // LSM303AGR accelerometer I2C address and registers
 const ACCEL_ADDR: u8 = 0x19;
@@ -56,6 +58,14 @@ bind_interrupts!(struct GyroInterrupts {
     DMA1_CHANNEL3 => dma::InterruptHandler<peripherals::DMA1_CH3>; // TX
     DMA1_CHANNEL2 => dma::InterruptHandler<peripherals::DMA1_CH2>; // RX
 });
+
+#[derive(Serialize, Deserialize, Debug)]
+struct TelemetryFrame {
+    t_ms: u64,
+    roll: f32,
+    pitch: f32,
+    yaw: f32,
+}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -165,7 +175,16 @@ async fn main(spawner: Spawner) {
         };
         let (roll, pitch, yaw) = quat.euler_angles();
         // Do something with the updated state quaternion
-        println!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
+        info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
+        let t_frame: TelemetryFrame = TelemetryFrame {
+            t_ms: 123445u64,
+            roll,
+            pitch,
+            yaw,
+        };
+        // info!("{:?}", &t_frame);
+        let mut buf = [0u8; 32];
+        let frame = postcard::to_slice_cobs(&t_frame, &mut buf);
         Timer::after_millis(100).await;
     }
 }
