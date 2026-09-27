@@ -2,6 +2,7 @@
 #![no_main]
 
 use ahrs::{Ahrs, Madgwick};
+use core::fmt::Write as _;
 use defmt::*;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
@@ -10,6 +11,7 @@ use embassy_stm32::i2c::Config as I2cConfig;
 use embassy_stm32::i2c::mode::Master as I2cMaster;
 use embassy_stm32::mode::Async;
 use embassy_stm32::spi::mode::Master as SPIMaster;
+use embassy_stm32::usb::{self, Driver};
 use embassy_stm32::{
     bind_interrupts, dma,
     gpio::{Level, Output, Speed},
@@ -18,11 +20,17 @@ use embassy_stm32::{
     spi::{BitOrder, Config as SpiConfig, MODE_3, Spi},
     time::Hertz,
 };
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
 use embassy_time::{Instant, Timer};
+use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use embassy_usb::driver::EndpointError;
+use embassy_usb::{Builder, UsbDevice};
 use nalgebra::Vector3;
 use panic_probe as _;
 use postcard;
 use serde::{Deserialize, Serialize};
+use static_cell::StaticCell;
 
 // LSM303AGR accelerometer I2C address and registers
 const ACCEL_ADDR: u8 = 0x19;
@@ -59,6 +67,22 @@ bind_interrupts!(struct GyroInterrupts {
     DMA1_CHANNEL2 => dma::InterruptHandler<peripherals::DMA1_CH2>; // RX
 });
 
+// USB interrupt
+bind_interrupts!(struct UsbIrqs {
+    USB_LP_CAN_RX0 => usb::InterruptHandler<peripherals::USB>;
+});
+
+type UsbDriver = Driver<'static, peripherals::USB>;
+
+struct UsbResources {
+    config_desc: [u8; 256],
+    bos_desc: [u8; 256],
+    control_buf: [u8; 64],
+    cdc_state: State<'static>,
+}
+
+static USB_RES: StaticCell<UsbResources> = StaticCell::new();
+
 #[derive(Serialize, Deserialize, Debug)]
 struct TelemetryFrame {
     t_ms: u64,
@@ -67,10 +91,12 @@ struct TelemetryFrame {
     yaw: f32,
 }
 
+static FRAMES: Channel<CriticalSectionRawMutex, TelemetryFrame, 8> = Channel::new();
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    // -- init RCC USB output (for data streaming) --
     let mut config = embassy_stm32::Config::default();
+    // -- USB settings for RCC output (data streaming) --
     {
         use embassy_stm32::rcc::*;
         use embassy_stm32::time::mhz;
@@ -88,8 +114,39 @@ async fn main(spawner: Spawner) {
         config.rcc.apb1_pre = APBPrescaler::DIV2; // APB1 is limited to 36 MHz
         config.rcc.apb2_pre = APBPrescaler::DIV1;
     }
-    let p = embassy_stm32::init(config);
-    // let p = embassy_stm32::init(Default::default());
+    // Embassy init
+    let mut p = embassy_stm32::init(config);
+    // The Discovery board has a fixed pull-up resistor on D+ (PA12). Holding PA12
+    // low for a moment looks like an unplug to the host, so it re-enumerates after every reflash.
+    {
+        let _dp = Output::new(p.PA12.reborrow(), Level::Low, Speed::Low);
+        Timer::after_millis(10).await;
+    }
+    let driver = Driver::new(p.USB, UsbIrqs, p.PA12, p.PA11);
+
+    let mut usb_config = embassy_usb::Config::new(0x1200, 0x0001); // Test ID
+    usb_config.manufacturer = Some("Samuel Spinn");
+    usb_config.product = Some("IMU telemetery");
+    usb_config.serial_number = Some("0001");
+
+    let res = USB_RES.init(UsbResources {
+        config_desc: [0; 256],
+        bos_desc: [0; 256],
+        control_buf: [0; 64],
+        cdc_state: State::new(),
+    });
+
+    let mut builder = Builder::new(
+        driver,
+        usb_config,
+        &mut res.config_desc,
+        &mut res.bos_desc,
+        &mut [],
+        &mut res.control_buf,
+    );
+    let mut class = CdcAcmClass::new(&mut builder, &mut res.cdc_state, 64);
+    let usb = builder.build();
+    spawner.spawn(usb_task(usb).unwrap());
 
     let heartbeat_led = Output::new(p.PE9, Level::Low, Speed::Low); // N, red
     spawner.spawn(heartbeat(heartbeat_led).unwrap());
@@ -155,38 +212,57 @@ async fn main(spawner: Spawner) {
 
     let mut ahrs = Madgwick::new(1.0f32 / 256.0, 0.1f32);
     loop {
-        let ((accel, mag), gyro) = join(
-            read_i2c_sensors(&mut i2c, (&mut accel_buf, &mut mag_buf)),
-            read_gyro(&mut gyro_spi, &mut gyro_cs, &mut gyro_buf),
-        )
-        .await;
+        class.wait_connection().await;
+        info!("USB host connected!");
+        FRAMES.clear(); // drop samples queued up before we started listening
 
-        if mag.norm() < 1e-3 {
-            error!("Degenerate mag vector: {:?}", (mag.x, mag.y, mag.z));
-            continue; // don't feed bad data into the filter
+        let header = b"t_ms,roll,pitch,yaw\n";
+        if write_line(&mut class, header).await.is_err() {
+            continue;
         }
-        // Run inputs through AHRS filter (gyroscope must be radians/s)
-        let quat = match ahrs.update(&gyro, &accel, &mag) {
-            Ok(quat) => quat,
-            Err(_e) => {
-                warn!("AHRS update failed");
-                continue;
+
+        loop {
+            let ((accel, mag), gyro) = join(
+                read_i2c_sensors(&mut i2c, (&mut accel_buf, &mut mag_buf)),
+                read_gyro(&mut gyro_spi, &mut gyro_cs, &mut gyro_buf),
+            )
+            .await;
+
+            if mag.norm() < 1e-3 {
+                error!("Degenerate mag vector: {:?}", (mag.x, mag.y, mag.z));
+                continue; // don't feed bad data into the filter
             }
-        };
-        let (roll, pitch, yaw) = quat.euler_angles();
-        // Do something with the updated state quaternion
-        info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
-        let t_frame: TelemetryFrame = TelemetryFrame {
-            t_ms: Instant::now().as_millis(),
-            roll,
-            pitch,
-            yaw,
-        };
-        // info!("{:?}", &t_frame);
-        let mut buf = [0u8; 32];
-        let frame = postcard::to_slice_cobs(&t_frame, &mut buf);
-        Timer::after_millis(100).await;
+            // Run inputs through AHRS filter (gyroscope must be radians/s)
+            let quat = match ahrs.update(&gyro, &accel, &mag) {
+                Ok(quat) => quat,
+                Err(_e) => {
+                    warn!("AHRS update failed");
+                    continue;
+                }
+            };
+            let (roll, pitch, yaw) = quat.euler_angles();
+            // Do something with the updated state quaternion
+            info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
+            let t_frame: TelemetryFrame = TelemetryFrame {
+                t_ms: Instant::now().as_millis(),
+                roll,
+                pitch,
+                yaw,
+            };
+            let mut buf = [0u8; 32];
+            let frame = match postcard::to_slice_cobs(&t_frame, &mut buf) {
+                Ok(f) => f,
+                Err(_) => {
+                    break;
+                }
+            };
+            if write_line(&mut class, frame).await.is_err() {
+                break;
+            }
+            Timer::after_millis(100).await;
+        }
     }
+    info("USB host disconnected");
 }
 
 async fn read_i2c_sensors(
@@ -249,4 +325,23 @@ async fn heartbeat(mut led: Output<'static>) {
         led.set_low();
         Timer::after_millis(9900).await;
     }
+}
+
+#[embassy_executor::task]
+async fn usb_task(mut usb: UsbDevice<'static, UsbDriver>) -> ! {
+    usb.run().await
+}
+
+async fn write_line(
+    class: &mut CdcAcmClass<'static, UsbDriver>,
+    data: &[u8],
+) -> Result<(), EndpointError> {
+    let max = class.max_packet_size() as usize;
+    for chunk in data.chunks(max) {
+        class.write_packet(chunk).await?;
+    }
+    if data.len() % max == 0 {
+        class.write_packet(&[]).await?;
+    }
+    Ok(())
 }
