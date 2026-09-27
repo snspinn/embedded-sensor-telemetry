@@ -33,11 +33,11 @@ const CFG_REG_C_M: u8 = 0x62;
 const OUTX_L_REG_M: u8 = 0x68;
 
 // Conversion factors
-const MAG_SENS: f64 = 0.0015; // gauss per LSB, same on all axes, no gain setting
-const ACCEL_SENS: f64 = 0.001; // g/LSB at ±2g (1 mg/LSB)
-const G: f64 = 9.80665; // m/s²
-const GYRO_SENS: f64 = 8.75e-3; // dps/LSB at ±250 dps
-const DEG_TO_RAD: f64 = core::f64::consts::PI / 180.0;
+const MAG_SENS: f32 = 0.0015; // gauss per LSB, same on all axes, no gain setting
+const ACCEL_SENS: f32 = 0.001; // g/LSB at ±2g (1 mg/LSB)
+const G: f32 = 9.80665; // m/s²
+const GYRO_SENS: f32 = 8.75e-3; // dps/LSB at ±250 dps
+const DEG_TO_RAD: f32 = core::f32::consts::PI / 180.0;
 
 bind_interrupts!(struct AccelInterrupts {
     I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
@@ -143,7 +143,7 @@ async fn main(spawner: Spawner) {
     Timer::after_millis(100).await; // ← wait for first conversion
     let mut mag_buf = [0u8; 6];
 
-    let mut ahrs = Madgwick::default();
+    let mut ahrs = Madgwick::new(1.0f32 / 256.0, 0.1f32);
     loop {
         let ((accel, mag), gyro) = join(
             read_i2c_sensors(&mut i2c, (&mut accel_buf, &mut mag_buf)),
@@ -173,7 +173,7 @@ async fn main(spawner: Spawner) {
 async fn read_i2c_sensors(
     i2c: &mut I2c<'_, Async, I2cMaster>,
     buf: (&mut [u8], &mut [u8]),
-) -> (Vector3<f64>, Vector3<f64>) {
+) -> (Vector3<f32>, Vector3<f32>) {
     // Write register address, then read 6 bytes (X_L, X_H, Y_L, Y_H, Z_L, Z_H)
     i2c.write_read(ACCEL_ADDR, &[OUT_X_L_A], buf.0)
         .await
@@ -181,9 +181,9 @@ async fn read_i2c_sensors(
 
     // Note  LSM303DLHC accelerometer data is left-aligned
     let accel = Vector3::new(
-        (i16::from_le_bytes([buf.0[0], buf.0[1]]) >> 4) as f64 * ACCEL_SENS * G,
-        (i16::from_le_bytes([buf.0[2], buf.0[3]]) >> 4) as f64 * ACCEL_SENS * G,
-        (i16::from_le_bytes([buf.0[4], buf.0[5]]) >> 4) as f64 * ACCEL_SENS * G,
+        (i16::from_le_bytes([buf.0[0], buf.0[1]]) >> 4) as f32 * ACCEL_SENS * G,
+        (i16::from_le_bytes([buf.0[2], buf.0[3]]) >> 4) as f32 * ACCEL_SENS * G,
+        (i16::from_le_bytes([buf.0[4], buf.0[5]]) >> 4) as f32 * ACCEL_SENS * G,
     );
 
     i2c.write_read(MAG_ADDR, &[OUTX_L_REG_M], buf.1)
@@ -192,9 +192,9 @@ async fn read_i2c_sensors(
     // Note LSM303DLHC magnetometer output byte order (Z before Y):
     //   X_H, X_L, Z_H, Z_L, Y_H, Y_L
     let mag = Vector3::new(
-        i16::from_le_bytes([buf.1[0], buf.1[1]]) as f64 * MAG_SENS,
-        i16::from_le_bytes([buf.1[2], buf.1[3]]) as f64 * MAG_SENS,
-        i16::from_le_bytes([buf.1[4], buf.1[5]]) as f64 * MAG_SENS,
+        i16::from_le_bytes([buf.1[0], buf.1[1]]) as f32 * MAG_SENS,
+        i16::from_le_bytes([buf.1[2], buf.1[3]]) as f32 * MAG_SENS,
+        i16::from_le_bytes([buf.1[4], buf.1[5]]) as f32 * MAG_SENS,
     );
 
     (accel, mag)
@@ -204,7 +204,7 @@ async fn read_gyro<'a>(
     spi: &mut Spi<'_, Async, SPIMaster>,
     cs: &mut Output<'a>,
     buf: &mut [u8],
-) -> Vector3<f64> {
+) -> Vector3<f32> {
     // Read 6 bytes starting at OUT_X_L with auto-increment
     let cmd = READ_FLAG | AUTO_INC | OUT_X_L;
     let tx = [cmd, 0, 0, 0, 0, 0, 0];
@@ -215,9 +215,9 @@ async fn read_gyro<'a>(
 
     // gyro_buf[0] is the command echo; data starts at [1]
     Vector3::new(
-        i16::from_le_bytes([buf[1], buf[2]]) as f64 * GYRO_SENS * DEG_TO_RAD,
-        i16::from_le_bytes([buf[3], buf[4]]) as f64 * GYRO_SENS * DEG_TO_RAD,
-        i16::from_le_bytes([buf[5], buf[6]]) as f64 * GYRO_SENS * DEG_TO_RAD,
+        i16::from_le_bytes([buf[1], buf[2]]) as f32 * GYRO_SENS * DEG_TO_RAD,
+        i16::from_le_bytes([buf[3], buf[4]]) as f32 * GYRO_SENS * DEG_TO_RAD,
+        i16::from_le_bytes([buf[5], buf[6]]) as f32 * GYRO_SENS * DEG_TO_RAD,
     )
 }
 
