@@ -33,9 +33,6 @@ pub struct TelemetryFrame {
     pub imu: ImuFusion,
 }
 
-/// COBS-encoded frame with length prefix for easy parsing
-pub struct EncodedFrame(pub Vec<u8>);
-
 impl TelemetryFrame {
     /// Create a new from from (filtered) sensor readings
     pub fn new(seq: u32, uptime_ms: u64, imu: ImuFusion) -> Self {
@@ -48,10 +45,13 @@ impl TelemetryFrame {
     }
 
     /// Encode to COBS + postcard. Return a frame ready for transmission.
-    pub fn encode(&self) -> Result<EncodedFrame, postcard::Error> {
+    pub fn encode(&self) -> Result<heapless::Vec<u8, 64>, postcard::Error> {
         let mut buf = [0u8; Self::POSTCARD_MAX_SIZE + 4]; // safety margin
         let serialized = postcard::to_slice_cobs(self, &mut buf)?;
-        Ok(EncodedFrame(serialized.to_vec()))
+        let mut v = heapless::Vec::new();
+        v.extend_from_slice(serialized)
+            .map_err(|_| postcard::Error::SerializeBufferFull)?;
+        Ok(v)
     }
 
     /// Decode COBS frae back into `TelemetryFrame`.
@@ -107,7 +107,7 @@ mod tests {
         );
 
         let encoded = frame.encode().expect("encode");
-        let decoded = TelemetryFrame::decode(&encoded.0).expect("decode");
+        let decoded = TelemetryFrame::decode(&encoded).expect("decode");
 
         assert_eq!(frame, decoded);
     }

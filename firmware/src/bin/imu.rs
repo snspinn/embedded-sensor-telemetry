@@ -272,7 +272,7 @@ async fn usb_task(mut usb: UsbDevice<'static, UsbDriver>) -> ! {
 
 async fn write_frame(
     class: &mut CdcAcmClass<'static, UsbDriver>,
-    data: &[u8],
+    data: heapless::Vec<u8, 64>,
 ) -> Result<(), EndpointError> {
     let max = class.max_packet_size() as usize;
     for chunk in data.chunks(max) {
