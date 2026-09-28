@@ -2,7 +2,6 @@
 #![no_main]
 
 use ahrs::{Ahrs, Madgwick};
-use core::fmt::Write as _;
 use defmt::*;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
@@ -262,7 +261,6 @@ async fn main(spawner: Spawner) {
             Timer::after_millis(100).await;
         }
     }
-    info("USB host disconnected");
 }
 
 async fn read_i2c_sensors(

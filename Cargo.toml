@@ -4,3 +4,9 @@ members = ["protocol", "ingestor", "firmware"]
 
 [workspace.dependencies]
 protocol = { path = "protocol" }
+
+[profile.dev.package."*"]
+opt-level = "s"   # optimize for size
+
+[profile.dev]
+opt-level = 1
