@@ -94,6 +94,7 @@ struct TelemetryFrame {
     yaw: f32,
 }
 
+// 8 frames at 10 Hz allows for 800 ms of hiccups on USB side
 static FRAMES: Channel<CriticalSectionRawMutex, TelemetryFrame, 8> = Channel::new();
 
 #[embassy_executor::main]
@@ -338,6 +339,8 @@ async fn sensor_task(
             pitch,
             yaw,
         };
+        // Note: `try_send()` drops newest frames when channel is full
+        // TODO: Keep freshest data with a `Signal` or `Watch`
         let _ = FRAMES.try_send(frame);
     }
 }
