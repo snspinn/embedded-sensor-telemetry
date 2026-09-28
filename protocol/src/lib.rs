@@ -4,9 +4,9 @@
 #![no_std]
 #![cfg_attr(not(test), no_main)]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
-use alloc::vec::Vec;
 use core::fmt;
 use postcard::experimental::max_size::MaxSize;
 use serde::{Deserialize, Serialize};
