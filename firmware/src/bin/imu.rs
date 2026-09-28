@@ -283,7 +283,7 @@ async fn usb_task(mut usb: UsbDevice<'static, UsbDriver>) -> ! {
     usb.run().await
 }
 
-async fn write_line(
+async fn write_frame(
     class: &mut CdcAcmClass<'static, UsbDriver>,
     data: &[u8],
 ) -> Result<(), EndpointError> {
@@ -357,7 +357,7 @@ async fn telemetry_task(mut class: CdcAcmClass<'static, UsbDriver>) -> ! {
                 warn!("COBs encode failed");
                 continue;
             };
-            if write_line(&mut class, bytes).await.is_err() {
+            if write_frame(&mut class, bytes).await.is_err() {
                 break; // disconnected, go back to waiting
             }
         }
