@@ -127,7 +127,7 @@ async fn main(spawner: Spawner) {
     }
     let driver = Driver::new(p.USB, UsbIrqs, p.PA12, p.PA11);
 
-    let mut usb_config = embassy_usb::Config::new(0x1200, 0x0001); // Test ID
+    let mut usb_config = embassy_usb::Config::new(0x1209, 0x0001); // Test ID
     usb_config.manufacturer = Some("Samuel Spinn");
     usb_config.product = Some("IMU telemetery");
     usb_config.serial_number = Some("0001");
