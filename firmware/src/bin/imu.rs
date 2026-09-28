@@ -177,7 +177,7 @@ async fn main(spawner: Spawner) {
     gyro_cs.set_low();
     gyro_spi.write(&[CTRL_REG1, 0x0F]).await.unwrap();
     gyro_cs.set_high();
-    let mut gyro_buf = [0u8; 7]; // 1 cmd byte + 6 data bytes
+    let gyro_buf = [0u8; 7]; // 1 cmd byte + 6 data bytes
 
     /* Set up the accelerometer & magnetometer */
     let mut config = I2cConfig::default();
@@ -203,63 +203,16 @@ async fn main(spawner: Spawner) {
     i2c.write(ACCEL_ADDR, &[CTRL_REG1_A, 0x57]).await.unwrap(); // 100 HZ, all axes on
     i2c.write(ACCEL_ADDR, &[CTRL_REG4_A, 0x08]).await.unwrap(); // ±2g full-scale, high-res mode (HR bit)
 
-    let mut accel_buf = [0u8; 6];
+    let accel_buf = [0u8; 6];
     // -- Magnetometer init --
     // Temperature compensation on, 10 Hz, continuous mode
     i2c.write(MAG_ADDR, &[CFG_REG_A_M, 0x80]).await.unwrap();
     // Block data update, so the high and low bytes always come from the same sample
     i2c.write(MAG_ADDR, &[CFG_REG_C_M, 0x10]).await.unwrap();
-    let mut mag_buf = [0u8; 6];
+    let mag_buf = [0u8; 6];
 
-    let mut ahrs = Madgwick::new(SAMPLE_PERIOD_S, 0.1f32);
-    let mut ticker = Ticker::every(Duration::from_millis(SAMPLE_PERIOD_MS));
-
-    loop {
-        class.wait_connection().await;
-        info!("USB host connected!");
-        FRAMES.clear(); // drop samples queued up before we started listening
-
-        loop {
-            ticker.next().await;
-            let ((accel, mag), gyro) = join(
-                read_i2c_sensors(&mut i2c, (&mut accel_buf, &mut mag_buf)),
-                read_gyro(&mut gyro_spi, &mut gyro_cs, &mut gyro_buf),
-            )
-            .await;
-
-            if mag.norm() < 1e-3 {
-                error!("Degenerate mag vector: {:?}", (mag.x, mag.y, mag.z));
-                continue; // don't feed bad data into the filter
-            }
-            // Run inputs through AHRS filter (gyroscope must be radians/s)
-            let quat = match ahrs.update(&gyro, &accel, &mag) {
-                Ok(quat) => quat,
-                Err(_e) => {
-                    warn!("AHRS update failed");
-                    continue;
-                }
-            };
-            let (roll, pitch, yaw) = quat.euler_angles();
-            // Do something with the updated state quaternion
-            info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
-            let t_frame: TelemetryFrame = TelemetryFrame {
-                t_ms: Instant::now().as_millis(),
-                roll,
-                pitch,
-                yaw,
-            };
-            let mut buf = [0u8; 32];
-            let frame = match postcard::to_slice_cobs(&t_frame, &mut buf) {
-                Ok(f) => f,
-                Err(_) => {
-                    break;
-                }
-            };
-            if write_line(&mut class, frame).await.is_err() {
-                break;
-            }
-        }
-    }
+    spawner.spawn(sensor_task(i2c, gyro_spi, gyro_cs, accel_buf, mag_buf, gyro_buf).unwrap());
+    spawner.spawn(telemetry_task(class).unwrap());
 }
 
 async fn read_i2c_sensors(
@@ -341,4 +294,69 @@ async fn write_line(
         class.write_packet(&[]).await?;
     }
     Ok(())
+}
+
+#[embassy_executor::task]
+async fn sensor_task(
+    mut i2c: I2c<'static, Async, I2cMaster>,
+    mut spi: Spi<'static, Async, SPIMaster>,
+    mut gyro_cs: Output<'static>,
+    mut accel_buf: [u8; 6],
+    mut mag_buf: [u8; 6],
+    mut gyro_buf: [u8; 7],
+) -> ! {
+    // do thing
+    let mut ahrs = Madgwick::new(SAMPLE_PERIOD_S, 0.1f32);
+    let mut ticker = Ticker::every(Duration::from_millis(SAMPLE_PERIOD_MS));
+
+    loop {
+        ticker.next().await;
+        let ((accel, mag), gyro) = join(
+            read_i2c_sensors(&mut i2c, (&mut accel_buf, &mut mag_buf)),
+            read_gyro(&mut spi, &mut gyro_cs, &mut gyro_buf),
+        )
+        .await;
+
+        if mag.norm() < 1e-3 {
+            error!("Degenerate mag vector: {:?}", (mag.x, mag.y, mag.z));
+            continue; // don't feed bad data into the filter
+        }
+        // Run inputs through AHRS filter (gyroscope must be radians/s)
+        let quat = match ahrs.update(&gyro, &accel, &mag) {
+            Ok(quat) => quat,
+            Err(_e) => {
+                warn!("AHRS update failed");
+                continue;
+            }
+        };
+        let (roll, pitch, yaw) = quat.euler_angles();
+        // Do something with the updated state quaternion
+        info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
+        let frame: TelemetryFrame = TelemetryFrame {
+            t_ms: Instant::now().as_millis(),
+            roll,
+            pitch,
+            yaw,
+        };
+        let _ = FRAMES.try_send(frame);
+    }
+}
+
+#[embassy_executor::task]
+async fn telemetry_task(mut class: CdcAcmClass<'static, UsbDriver>) -> ! {
+    let mut buf = [0u8; 64];
+    loop {
+        class.wait_connection().await;
+        FRAMES.clear(); // drop samples queued up before we started listening
+        loop {
+            let frame = FRAMES.receive().await;
+            let Ok(bytes) = postcard::to_slice_cobs(&frame, &mut buf) else {
+                warn!("COBs encode failed");
+                continue;
+            };
+            if write_line(&mut class, bytes).await.is_err() {
+                break; // disconnected, go back to waiting
+            }
+        }
+    }
 }
