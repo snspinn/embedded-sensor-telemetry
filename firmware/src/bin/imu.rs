@@ -27,8 +27,7 @@ use embassy_usb::driver::EndpointError;
 use embassy_usb::{Builder, UsbDevice};
 use nalgebra::Vector3;
 use panic_probe as _;
-use postcard;
-use serde::{Deserialize, Serialize};
+use protocol::{ImuFusion, Seq, TelemetryFrame};
 use static_cell::StaticCell;
 
 // Sampling period
@@ -85,14 +84,6 @@ struct UsbResources {
 }
 
 static USB_RES: StaticCell<UsbResources> = StaticCell::new();
-
-#[derive(Serialize, Deserialize, Debug)]
-struct TelemetryFrame {
-    t_ms: u64,
-    roll: f32,
-    pitch: f32,
-    yaw: f32,
-}
 
 // 8 frames at 10 Hz allows for 800 ms of hiccups on USB side
 static FRAMES: Channel<CriticalSectionRawMutex, TelemetryFrame, 8> = Channel::new();
@@ -329,12 +320,11 @@ async fn sensor_task(
         let (roll, pitch, yaw) = quat.euler_angles();
         // Do something with the updated state quaternion
         info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
-        let frame: TelemetryFrame = TelemetryFrame {
-            t_ms: Instant::now().as_millis(),
-            roll,
-            pitch,
-            yaw,
-        };
+        let frame: TelemetryFrame = TelemetryFrame::new(
+            42,
+            Instant::now().as_millis(),
+            ImuFusion { roll, pitch, yaw },
+        );
         // Note: `try_send()` drops newest frames when channel is full
         // TODO: Keep freshest data with a `Signal` or `Watch`
         let _ = FRAMES.try_send(frame);
@@ -349,7 +339,7 @@ async fn telemetry_task(mut class: CdcAcmClass<'static, UsbDriver>) -> ! {
         FRAMES.clear(); // drop samples queued up before we started listening
         loop {
             let frame = FRAMES.receive().await;
-            let Ok(bytes) = postcard::to_slice_cobs(&frame, &mut buf) else {
+            let Ok(bytes) = frame.encode() else {
                 warn!("COBs encode failed");
                 continue;
             };

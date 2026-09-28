@@ -3,7 +3,7 @@ resolver = "3"
 members = ["protocol", "ingestor", "firmware"]
 
 [workspace.dependencies]
-protocol = { path = "protocol" }
+protocol = { path = "protocol", default-features = false }
 
 [profile.dev.package."*"]
 opt-level = "s"   # optimize for size
