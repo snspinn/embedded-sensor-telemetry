@@ -220,12 +220,10 @@ async fn read_i2c_sensors(
     i2c: &mut I2c<'_, Async, I2cMaster>,
     buf: (&mut [u8], &mut [u8]),
 ) -> (Vector3<f32>, Vector3<f32>) {
-    // Write register address, then read 6 bytes (X_L, X_H, Y_L, Y_H, Z_L, Z_H)
     i2c.write_read(ACCEL_ADDR, &[OUT_X_L_A], buf.0)
         .await
         .unwrap();
 
-    // Note  LSM303DLHC accelerometer data is left-aligned
     let accel = Vector3::new(
         (i16::from_le_bytes([buf.0[0], buf.0[1]]) >> 4) as f32 * ACCEL_SENS * G,
         (i16::from_le_bytes([buf.0[2], buf.0[3]]) >> 4) as f32 * ACCEL_SENS * G,
@@ -235,8 +233,6 @@ async fn read_i2c_sensors(
     i2c.write_read(MAG_ADDR, &[OUTX_L_REG_M], buf.1)
         .await
         .unwrap();
-    // Note LSM303DLHC magnetometer output byte order (Z before Y):
-    //   X_H, X_L, Z_H, Z_L, Y_H, Y_L
     let mag = Vector3::new(
         i16::from_le_bytes([buf.1[0], buf.1[1]]) as f32 * MAG_SENS,
         i16::from_le_bytes([buf.1[2], buf.1[3]]) as f32 * MAG_SENS,
