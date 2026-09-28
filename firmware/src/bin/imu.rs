@@ -21,7 +21,7 @@ use embassy_stm32::{
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_time::{Instant, Timer};
+use embassy_time::{Duration, Instant, Ticker, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::{Builder, UsbDevice};
@@ -30,6 +30,10 @@ use panic_probe as _;
 use postcard;
 use serde::{Deserialize, Serialize};
 use static_cell::StaticCell;
+
+// Sampling period
+const SAMPLE_PERIOD_MS: u64 = 100;
+const SAMPLE_PERIOD_S: f32 = SAMPLE_PERIOD_MS as f32 / 1000.0;
 
 // LSM303AGR accelerometer I2C address and registers
 const ACCEL_ADDR: u8 = 0x19;
@@ -205,22 +209,18 @@ async fn main(spawner: Spawner) {
     i2c.write(MAG_ADDR, &[CFG_REG_A_M, 0x80]).await.unwrap();
     // Block data update, so the high and low bytes always come from the same sample
     i2c.write(MAG_ADDR, &[CFG_REG_C_M, 0x10]).await.unwrap();
-
-    Timer::after_millis(100).await; // ← wait for first conversion
     let mut mag_buf = [0u8; 6];
 
-    let mut ahrs = Madgwick::new(1.0f32 / 256.0, 0.1f32);
+    let mut ahrs = Madgwick::new(SAMPLE_PERIOD_S, 0.1f32);
+    let mut ticker = Ticker::every(Duration::from_millis(SAMPLE_PERIOD_MS));
+
     loop {
         class.wait_connection().await;
         info!("USB host connected!");
         FRAMES.clear(); // drop samples queued up before we started listening
 
-        let header = b"t_ms,roll,pitch,yaw\n";
-        if write_line(&mut class, header).await.is_err() {
-            continue;
-        }
-
         loop {
+            ticker.next().await;
             let ((accel, mag), gyro) = join(
                 read_i2c_sensors(&mut i2c, (&mut accel_buf, &mut mag_buf)),
                 read_gyro(&mut gyro_spi, &mut gyro_cs, &mut gyro_buf),
@@ -258,7 +258,6 @@ async fn main(spawner: Spawner) {
             if write_line(&mut class, frame).await.is_err() {
                 break;
             }
-            Timer::after_millis(100).await;
         }
     }
 }
