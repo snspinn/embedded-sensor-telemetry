@@ -9,4 +9,10 @@ protocol = { path = "protocol", default-features = false }
 opt-level = "s"   # optimize for size
 
 [profile.dev]
+panic = "abort"
 opt-level = 1
+
+[profile.release]
+panic = "abort"
+debug = 2
+opt-level = "s"

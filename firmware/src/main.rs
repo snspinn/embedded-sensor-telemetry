@@ -6,8 +6,8 @@ use defmt::*;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_futures::join::join;
-use embassy_stm32::i2c::Config as I2cConfig;
 use embassy_stm32::i2c::mode::Master as I2cMaster;
+use embassy_stm32::i2c::Config as I2cConfig;
 use embassy_stm32::mode::Async;
 use embassy_stm32::spi::mode::Master as SPIMaster;
 use embassy_stm32::usb::{self, Driver};
@@ -16,7 +16,7 @@ use embassy_stm32::{
     gpio::{Level, Output, Speed},
     i2c::{self, I2c},
     peripherals,
-    spi::{BitOrder, Config as SpiConfig, MODE_3, Spi},
+    spi::{BitOrder, Config as SpiConfig, Spi, MODE_3},
     time::Hertz,
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -26,8 +26,8 @@ use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::{Builder, UsbDevice};
 use nalgebra::Vector3;
-use panic_probe as _;
-use protocol::{ImuFusion, Seq, TelemetryFrame};
+use panic_halt as _;
+use protocol::{ImuFusion, TelemetryFrame};
 use static_cell::StaticCell;
 
 // Sampling period
@@ -139,7 +139,7 @@ async fn main(spawner: Spawner) {
         &mut [],
         &mut res.control_buf,
     );
-    let mut class = CdcAcmClass::new(&mut builder, &mut res.cdc_state, 64);
+    let class = CdcAcmClass::new(&mut builder, &mut res.cdc_state, 64);
     let usb = builder.build();
     spawner.spawn(usb_task(usb).unwrap());
 
@@ -293,7 +293,6 @@ async fn sensor_task(
     mut mag_buf: [u8; 6],
     mut gyro_buf: [u8; 7],
 ) -> ! {
-    // do thing
     let mut ahrs = Madgwick::new(SAMPLE_PERIOD_S, 0.1f32);
     let mut ticker = Ticker::every(Duration::from_millis(SAMPLE_PERIOD_MS));
     let mut sequence: u32 = 0;
@@ -319,7 +318,6 @@ async fn sensor_task(
             }
         };
         let (roll, pitch, yaw) = quat.euler_angles();
-        // Do something with the updated state quaternion
         debug!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
         sequence += 1;
         let frame: TelemetryFrame = TelemetryFrame::new(
@@ -327,8 +325,6 @@ async fn sensor_task(
             Instant::now().as_millis(),
             ImuFusion { roll, pitch, yaw },
         );
-        // Note: `try_send()` drops newest frames when channel is full
-        // TODO: Keep freshest data with a `Signal` or `Watch`
         info!("frame: {:?}", frame);
         let _ = FRAMES.try_send(frame);
     }
@@ -336,7 +332,7 @@ async fn sensor_task(
 
 #[embassy_executor::task]
 async fn telemetry_task(mut class: CdcAcmClass<'static, UsbDriver>) -> ! {
-    let mut buf = [0u8; 64];
+    let _buf = [0u8; 64];
     loop {
         class.wait_connection().await;
         FRAMES.clear(); // drop samples queued up before we started listening
