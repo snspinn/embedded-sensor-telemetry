@@ -296,6 +296,7 @@ async fn sensor_task(
     // do thing
     let mut ahrs = Madgwick::new(SAMPLE_PERIOD_S, 0.1f32);
     let mut ticker = Ticker::every(Duration::from_millis(SAMPLE_PERIOD_MS));
+    let mut sequence: u32 = 0;
 
     loop {
         ticker.next().await;
@@ -320,8 +321,9 @@ async fn sensor_task(
         let (roll, pitch, yaw) = quat.euler_angles();
         // Do something with the updated state quaternion
         info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
+        sequence += 1;
         let frame: TelemetryFrame = TelemetryFrame::new(
-            42,
+            sequence,
             Instant::now().as_millis(),
             ImuFusion { roll, pitch, yaw },
         );
