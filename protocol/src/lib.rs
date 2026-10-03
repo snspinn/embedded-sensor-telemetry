@@ -15,10 +15,12 @@ pub const PROTOCOL_VERSION: u8 = 1;
 
 // Frame counter
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, MaxSize)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Seq(pub u32);
 
 /// AHRS sensor fusion
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, MaxSize)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ImuFusion {
     pub roll: f32,
     pub pitch: f32,
@@ -26,6 +28,7 @@ pub struct ImuFusion {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, MaxSize)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TelemetryFrame {
     pub version: u8,
     pub seq: Seq,
@@ -87,6 +90,18 @@ impl fmt::Display for ProtocolError {
             ProtocolError::Cobs => f.write_str("COBS decode failed"),
             ProtocolError::VersionMismatch => f.write_str("protocol version mismatch"),
         }
+    }
+}
+
+// Human-readable Display for the host (std) side only
+#[cfg(feature = "std")]
+impl fmt::Display for TelemetryFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "TelemetryFrame(v={}, seq={}, t={}ms, imu=[{:?}])",
+            self.version, self.seq.0, self.uptime_ms, self.imu
+        )
     }
 }
 

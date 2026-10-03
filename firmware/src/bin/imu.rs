@@ -320,7 +320,7 @@ async fn sensor_task(
         };
         let (roll, pitch, yaw) = quat.euler_angles();
         // Do something with the updated state quaternion
-        info!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
+        debug!("pitch={}, roll={}, yaw={}", pitch, roll, yaw);
         sequence += 1;
         let frame: TelemetryFrame = TelemetryFrame::new(
             sequence,
@@ -329,6 +329,7 @@ async fn sensor_task(
         );
         // Note: `try_send()` drops newest frames when channel is full
         // TODO: Keep freshest data with a `Signal` or `Watch`
+        info!("frame: {:?}", frame);
         let _ = FRAMES.try_send(frame);
     }
 }

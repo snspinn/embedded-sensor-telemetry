@@ -15,6 +15,7 @@ cobs = { version = "0.5", default-features = false }
 defmt = { version = "0.3", optional = true}   # for firmware logging
 
 [features]
-default = ["alloc"]                     # ingestor gets alloc for free
+default = []
+std = ["alloc"]
 alloc = ["cobs/alloc"]                  # only pulls in Vec support when needed
 defmt = ["dep:defmt"]
