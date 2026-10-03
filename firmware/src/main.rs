@@ -26,7 +26,7 @@ use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::{Builder, UsbDevice};
 use nalgebra::Vector3;
-use panic_halt as _;
+use panic_probe as _;
 use protocol::{ImuFusion, TelemetryFrame};
 use static_cell::StaticCell;
 
