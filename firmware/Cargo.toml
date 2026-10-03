@@ -29,6 +29,9 @@ static_cell = "2"
 ahrs = { version = "0.8", default-features = false }
 nalgebra = { version = "0.34.2", default-features = false }
 
+# -- messaging protocol reqs --
+protocol = { workspace = true, default-features = false, features = ["defmt"] }
+
 [profile.release]
 debug = 2
 
