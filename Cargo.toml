@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["protocol", "ingestor", "firmware"]
+members = ["protocol", "ingestor"]
+exclude = [ "firmware" ]
 
 [workspace.dependencies]
 protocol = { path = "protocol", default-features = false }

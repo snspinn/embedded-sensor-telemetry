@@ -1,3 +1,5 @@
+[workspace]
+
 [package]
 authors = ["Samuel Spinn <sspinn@netfeasa.com>"]
 name = "firmware"
@@ -13,10 +15,8 @@ embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "execu
 embassy-time = { version = "0.5.1", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
 embassy-usb = { version = "0.6.0", features = ["defmt"] }
 embassy-futures = { version = "0.1.2" }
-
 defmt = "1.0.1"
 defmt-rtt = "1.0.0"
-
 cortex-m = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }
 cortex-m-rt = "0.7.0"
 embedded-hal = "0.2.6"
@@ -25,11 +25,10 @@ heapless = { version = "0.9", default-features = false }
 nb = "1.0.0"
 embedded-storage = "0.3.1"
 static_cell = "2"
-
+# -- IMU filter ---
 ahrs = { version = "0.8", default-features = false }
 nalgebra = { version = "0.34.2", default-features = false }
-
-# -- messaging protocol reqs --
+# -- messaging protocol --
 protocol = { workspace = true, features = ["defmt", "alloc"] }
 
 [dev-dependencies]
@@ -41,6 +40,7 @@ harness = false
 
 [profile.release]
 debug = 2
+opt-level = "s"
 
 [package.metadata.embassy]
 build = [
