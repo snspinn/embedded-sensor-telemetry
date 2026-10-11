@@ -3,7 +3,7 @@
 
 use defmt_rtt as _;
 use defmt_test::tests;
-use firmware as _; // pulls in main.rs + panic handler + memory layout
+use panic_probe as _;
 use protocol::{ImuFusion, TelemetryFrame};
 
 #[tests]
