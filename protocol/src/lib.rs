@@ -4,9 +4,6 @@
 #![no_std]
 #![cfg_attr(not(test), no_main)]
 
-#[cfg(feature = "alloc")]
-extern crate alloc;
-
 use core::fmt;
 use postcard::experimental::max_size::MaxSize;
 use serde::{Deserialize, Serialize};
@@ -58,11 +55,8 @@ impl TelemetryFrame {
     }
 
     /// Decode COBS frae back into `TelemetryFrame`.
-    ///  **Requires `alloc` feature** (ingestor only)
-    #[cfg(feature = "alloc")]
-    pub fn decode(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        let decoded = cobs::decode_vec(bytes).map_err(|_| ProtocolError::Cobs)?;
-        let frame: TelemetryFrame = postcard::from_bytes(&decoded)?;
+    pub fn decode(bytes: &mut [u8]) -> Result<Self, ProtocolError> {
+        let frame: TelemetryFrame = postcard::from_bytes(&bytes)?;
         if frame.version != PROTOCOL_VERSION {
             return Err(ProtocolError::VersionMismatch);
         }
