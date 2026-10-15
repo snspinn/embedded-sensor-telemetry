@@ -4,7 +4,7 @@ tasks:
   build:firmware:
     dir: firmware
     cmds:
-      - cargo build --bin hello
+      - cargo build --release
 
   build:ingestor:
     cmds:
