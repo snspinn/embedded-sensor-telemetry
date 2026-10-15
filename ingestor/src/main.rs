@@ -6,11 +6,24 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use protocol::*;
 
     #[test]
-    fn it_works() {
-        let result = protocol::add(2, 2);
-        assert_eq!(result, 4);
+    fn roundtrip() {
+        let frame = TelemetryFrame::new(
+            42,
+            12345678,
+            ImuFusion {
+                roll: 0.1,
+                pitch: 0.01,
+                yaw: 0.5,
+            },
+        );
+
+        let encoded = &mut frame.encode().expect("encode");
+        let bytes: &mut [u8] = &mut encoded[..];
+        let decoded = TelemetryFrame::decode(bytes).expect("decode");
+
+        assert_eq!(frame, decoded);
     }
 }
