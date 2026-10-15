@@ -24,11 +24,8 @@ defmt = "1.0.1"
 defmt-rtt = "1.0.0"
 cortex-m = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }
 cortex-m-rt = "0.7.0"
-embedded-hal = "0.2.6"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
 heapless = { version = "0.9", default-features = false }
-nb = "1.0.0"
-embedded-storage = "0.3.1"
 static_cell = "2"
 # -- IMU filter ---
 ahrs = { version = "0.8", default-features = false }
@@ -51,3 +48,6 @@ opt-level = "s"
 build = [
   { target = "thumbv7em-none-eabihf", artifact-dir = "out/examples/stm32f3" }
 ]
+
+[package.metadata.cargo-machete]
+ignored = ["cortex-m", "cortex-m-rt"]
