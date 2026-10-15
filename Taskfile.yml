@@ -1,10 +1,10 @@
-version: '3'
+version: "3"
 
 tasks:
   build:firmware:
     dir: firmware
     cmds:
-      - cargo build --bin hello
+      - cargo build --release
 
   build:ingestor:
     cmds:
@@ -18,5 +18,12 @@ tasks:
     cmds:
       - cargo test --test integration
 
+  check:protocol:
+    cmds:
+      - cargo check -p protocol --no-default-features --target thumbv7em-none-eabihf
+
   test:
-    deps: [test:firmware,]
+    deps: [test:firmware]
+
+  check:
+    deps: [check:protocol]
