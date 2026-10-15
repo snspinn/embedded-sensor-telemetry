@@ -34,7 +34,7 @@ static_cell = "2"
 ahrs = { version = "0.8", default-features = false }
 nalgebra = { version = "0.34.2", default-features = false }
 # -- messaging protocol --
-protocol = { workspace = true, features = ["defmt", "alloc"] }
+protocol = { path = "../protocol", features = ["defmt", "alloc"] }
 
 [dev-dependencies]
 defmt-test = "0.3"
