@@ -99,7 +99,7 @@ impl fmt::Display for TelemetryFrame {
     }
 }
 
-#[cfg(all(test, feature = "alloc"))]
+#[cfg(all(test))]
 mod tests {
     use super::*;
 
@@ -115,8 +115,9 @@ mod tests {
             },
         );
 
-        let encoded = frame.encode().expect("encode");
-        let decoded = TelemetryFrame::decode(&encoded).expect("decode");
+        let encoded = &mut frame.encode().expect("encode");
+        let bytes: &mut [u8] = &mut encoded[..];
+        let decoded = TelemetryFrame::decode(bytes).expect("decode");
 
         assert_eq!(frame, decoded);
     }
