@@ -2,7 +2,6 @@
 //! Uses postcard for serialization + COBS for framing over UART.
 
 #![no_std]
-#![cfg_attr(not(test), no_main)]
 
 use core::fmt;
 use postcard::experimental::max_size::MaxSize;
