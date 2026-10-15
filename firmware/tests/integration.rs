@@ -22,8 +22,9 @@ mod tests {
             },
         );
 
-        let encoded = original.encode().unwrap();
-        let decoded = TelemetryFrame::decode(&encoded).unwrap();
+        let encoded = &mut original.encode().expect("encode");
+        let bytes: &mut [u8] = &mut encoded[..];
+        let decoded = TelemetryFrame::decode(bytes).unwrap();
 
         defmt::assert_eq!(original.version, decoded.version);
         defmt::assert_eq!(original.seq.0, decoded.seq.0);
