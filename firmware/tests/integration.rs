@@ -3,6 +3,7 @@
 
 use defmt_rtt as _;
 use defmt_test::tests;
+use embassy_stm32 as _;
 use panic_probe as _;
 use protocol::{ImuFusion, TelemetryFrame};
 
