@@ -125,4 +125,33 @@ mod tests {
         let good: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
         assert_eq!(good, vec![frame(1), frame(3), frame(4)]);
     }
+
+    #[tokio::test]
+    #[ignore = "needs a board running current firmware on USB"]
+    async fn board_streams_crc_valid_frames() {
+        let path = find_port().expect("board not found");
+        let mut stream = tokio_serial::new(&path, 115_200)
+            .open_native_async()
+            .expect("open port");
+
+        let mut deframer = Deframer::default();
+        let mut results = Vec::new();
+        let mut buf = [0u8; 64];
+        while results.len() < 21 {
+            let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
+                .await
+                .expect("no data from board")
+                .expect("read");
+            assert_ne!(n, 0, "board disconnected");
+            results.extend(deframer.push(&buf[..n]));
+        }
+
+        // The first frame may be cut short by connecting mid-stream.
+        let frames: Vec<TelemetryFrame> = results[1..]
+            .iter()
+            .cloned()
+            .collect::<Result<_, _>>()
+            .expect("frame failed decode or CRC check");
+        assert!(frames.windows(2).all(|w| w[1].seq.0 > w[0].seq.0));
+    }
 }

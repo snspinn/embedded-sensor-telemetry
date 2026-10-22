@@ -22,6 +22,10 @@ tasks:
     cmds:
       - cargo check -p protocol --no-default-features --target thumbv7em-none-eabihf
 
+  test:e2e:
+    cmds:
+      - cargo test --package ingestor -- --ignored
+
   test:
     deps: [test:firmware]
 
