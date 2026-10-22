@@ -55,7 +55,7 @@ impl TelemetryFrame {
 
     /// Decode COBS frae back into `TelemetryFrame`.
     pub fn decode(bytes: &mut [u8]) -> Result<Self, ProtocolError> {
-        let frame: TelemetryFrame = postcard::from_bytes(&bytes)?;
+        let frame: TelemetryFrame = postcard::from_bytes_cobs(bytes)?;
         if frame.version != PROTOCOL_VERSION {
             return Err(ProtocolError::VersionMismatch);
         }
