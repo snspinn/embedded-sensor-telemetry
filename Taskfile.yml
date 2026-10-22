@@ -1,6 +1,13 @@
 version: "3"
 
+env:
+  DATABASE_URL: postgres://telemetry:telemetry@localhost:5433/telemetry
+
 tasks:
+  db:up:
+    cmds:
+      - docker compose up -d --wait db
+
   build:firmware:
     dir: firmware
     cmds:
@@ -27,7 +34,13 @@ tasks:
     cmds:
       - cargo check -p protocol --no-default-features --target thumbv7em-none-eabihf
 
+  test:db:
+    deps: [db:up]
+    cmds:
+      - "cargo test --package ingestor store:: -- --ignored"
+
   test:e2e:
+    deps: [db:up]
     cmds:
       - cargo test --package ingestor -- --ignored
 
