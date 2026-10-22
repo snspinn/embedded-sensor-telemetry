@@ -18,6 +18,17 @@ Without `--port`, the ingestor uses the first serial port whose USB VID/PID matc
 skips frames that fail to decode, logs gaps and resets in `seq`, and reconnects if the board is
 unplugged.
 
+## HTTP API
+
+Served on `127.0.0.1:3000` by default (`--listen` to change).
+
+- `GET /health`: `200` with `{"status":"ok","serial_connected":true|false}` while the process is up.
+- `GET /frames/latest`: the newest stored frame as JSON, or `404` when none are stored.
+
+```sh
+curl localhost:3000/frames/latest
+```
+
 ## Tests
 
 - `cargo test -p ingestor`: unit tests, no hardware or database.
