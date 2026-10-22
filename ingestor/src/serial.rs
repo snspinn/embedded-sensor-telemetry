@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
 use protocol::{ProtocolError, TelemetryFrame};
@@ -39,9 +41,15 @@ impl Deframer {
     }
 }
 
-pub async fn run(port: Option<String>, mut on_frame: impl FnMut(Received)) -> ! {
+pub async fn run(
+    port: Option<String>,
+    connected: Arc<AtomicBool>,
+    mut on_frame: impl FnMut(Received),
+) -> ! {
     loop {
-        match read_port(port.as_deref(), &mut on_frame).await {
+        let result = read_port(port.as_deref(), &connected, &mut on_frame).await;
+        connected.store(false, Ordering::Relaxed);
+        match result {
             Ok(path) => eprintln!("Disconnected from {path}"),
             Err(e) => eprintln!("Serial error: {e}"),
         }
@@ -51,6 +59,7 @@ pub async fn run(port: Option<String>, mut on_frame: impl FnMut(Received)) -> ! 
 
 async fn read_port(
     port: Option<&str>,
+    connected: &AtomicBool,
     on_frame: &mut impl FnMut(Received),
 ) -> tokio_serial::Result<String> {
     let path = match port {
@@ -58,6 +67,7 @@ async fn read_port(
         None => find_port()?,
     };
     let mut stream = tokio_serial::new(&path, 115_200).open_native_async()?;
+    connected.store(true, Ordering::Relaxed);
     eprintln!("Connected to {path}");
 
     let mut deframer = Deframer::default();

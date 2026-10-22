@@ -1,7 +1,18 @@
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use serde::Serialize;
+use sqlx::{FromRow, PgPool};
 
 use crate::serial::Received;
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct StoredFrame {
+    pub seq: i64,
+    pub uptime_ms: i64,
+    pub received_at: DateTime<Utc>,
+    pub roll: f32,
+    pub pitch: f32,
+    pub yaw: f32,
+}
 
 #[derive(Clone)]
 pub struct Store {
@@ -9,10 +20,24 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
         let pool = PgPool::connect(url).await?;
         sqlx::migrate!().run(&pool).await?;
-        Ok(Self { pool })
+        Ok(Self::new(pool))
+    }
+
+    pub async fn latest(&self) -> Result<Option<StoredFrame>, sqlx::Error> {
+        // Frames decoded from one serial read share `received_at`, so `seq` breaks the tie.
+        sqlx::query_as(
+            "SELECT seq, uptime_ms, received_at, roll, pitch, yaw FROM telemetry_frames
+             ORDER BY received_at DESC, seq DESC LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
     }
 
     pub async fn insert(&self, received: &Received) -> Result<(), sqlx::Error> {
