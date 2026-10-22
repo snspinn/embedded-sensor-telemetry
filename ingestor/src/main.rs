@@ -28,6 +28,8 @@ mod serial {
                 Some(d) => d,
             };
 
+        println!("STM on {:?}", device_handle);
+
         // device_handle.read_control(request_type, request, value, index, buf, timeout);
     }
 }
