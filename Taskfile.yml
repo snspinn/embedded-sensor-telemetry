@@ -6,6 +6,11 @@ tasks:
     cmds:
       - cargo build --release
 
+  flash:firmware:
+    dir: firmware
+    cmds:
+      - cargo run --release
+
   build:ingestor:
     cmds:
       - cargo build --package ingestor
