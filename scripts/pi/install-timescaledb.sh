@@ -33,14 +33,17 @@ CODENAME="$VERSION_CODENAME"
 info "Debian $VERSION_ID ($CODENAME), PostgreSQL $PG_VERSION"
 
 if ! mountpoint -q "$PG_DATA_MOUNT"; then
-    [[ ! -e "$PG_DATA_IMAGE" ]] || error "$PG_DATA_IMAGE exists but is not mounted at $PG_DATA_MOUNT. Check /etc/fstab."
-    info "Creating $PG_DATA_SIZE data filesystem image $PG_DATA_IMAGE"
-    fallocate -l "$PG_DATA_SIZE" "$PG_DATA_IMAGE"
-    chmod 600 "$PG_DATA_IMAGE"
-    mkfs.ext4 -q -L pgdata "$PG_DATA_IMAGE"
+    FSTAB_SRC=$(findmnt -s -n -o SOURCE "$PG_DATA_MOUNT" || true)
+    [[ -z "$FSTAB_SRC" || "$FSTAB_SRC" == "$PG_DATA_IMAGE" ]] \
+        || error "/etc/fstab mounts $FSTAB_SRC at $PG_DATA_MOUNT, but it is not mounted. Fix or remove that entry and re-run."
+    if [[ ! -e "$PG_DATA_IMAGE" ]]; then
+        info "Creating $PG_DATA_SIZE data filesystem image $PG_DATA_IMAGE"
+        fallocate -l "$PG_DATA_SIZE" "$PG_DATA_IMAGE"
+        chmod 600 "$PG_DATA_IMAGE"
+        mkfs.ext4 -q -L pgdata "$PG_DATA_IMAGE"
+    fi
     install -d "$PG_DATA_MOUNT"
-    findmnt -s "$PG_DATA_MOUNT" &>/dev/null \
-        || echo "$PG_DATA_IMAGE $PG_DATA_MOUNT ext4 loop,defaults,noatime 0 2" >> /etc/fstab
+    [[ -n "$FSTAB_SRC" ]] || echo "$PG_DATA_IMAGE $PG_DATA_MOUNT ext4 loop,defaults,noatime 0 2" >> /etc/fstab
     systemctl daemon-reload
     mount "$PG_DATA_MOUNT"
 fi
