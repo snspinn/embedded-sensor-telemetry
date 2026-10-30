@@ -5,6 +5,8 @@ set -euo pipefail
 PG_VERSION="${PG_VERSION:-17}"
 PG_PORT=5432
 PG_DATA_MOUNT="${PG_DATA_MOUNT:-/mnt/pgdata}"
+PG_DATA_IMAGE="${PG_DATA_IMAGE:-/var/lib/pgdata.img}"
+PG_DATA_SIZE="${PG_DATA_SIZE:-8G}"
 ENV_FILE="${ENV_FILE:-/etc/telemetry/database.env}"
 LAN_CIDR="${LAN_CIDR:-}"
 TS_SOURCE_REF="${TS_SOURCE_REF:-}"
@@ -30,13 +32,23 @@ psql_su() { runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 -p "$PG_PORT" "
 CODENAME="$VERSION_CODENAME"
 info "Debian $VERSION_ID ($CODENAME), PostgreSQL $PG_VERSION"
 
-mountpoint -q "$PG_DATA_MOUNT" \
-    || error "$PG_DATA_MOUNT is not a mount point. Mount the dedicated SSD partition there first (see ingestor/README.md)."
+if ! mountpoint -q "$PG_DATA_MOUNT"; then
+    [[ ! -e "$PG_DATA_IMAGE" ]] || error "$PG_DATA_IMAGE exists but is not mounted at $PG_DATA_MOUNT. Check /etc/fstab."
+    info "Creating $PG_DATA_SIZE data filesystem image $PG_DATA_IMAGE"
+    fallocate -l "$PG_DATA_SIZE" "$PG_DATA_IMAGE"
+    chmod 600 "$PG_DATA_IMAGE"
+    mkfs.ext4 -q -L pgdata "$PG_DATA_IMAGE"
+    install -d "$PG_DATA_MOUNT"
+    findmnt -s "$PG_DATA_MOUNT" &>/dev/null \
+        || echo "$PG_DATA_IMAGE $PG_DATA_MOUNT ext4 loop,defaults,noatime 0 2" >> /etc/fstab
+    systemctl daemon-reload
+    mount "$PG_DATA_MOUNT"
+fi
 DATA_SRC=$(findmnt -n -o SOURCE --target "$PG_DATA_MOUNT")
 ROOT_SRC=$(findmnt -n -o SOURCE --target /)
 [[ "$DATA_SRC" != "$ROOT_SRC" ]] || error "$PG_DATA_MOUNT is on the root filesystem ($ROOT_SRC)."
 findmnt -s "$PG_DATA_MOUNT" &>/dev/null || error "$PG_DATA_MOUNT has no /etc/fstab entry, so it would not mount at boot."
-info "Data partition: $DATA_SRC on $PG_DATA_MOUNT"
+info "Data filesystem: $DATA_SRC on $PG_DATA_MOUNT"
 
 # ── PostgreSQL (PGDG) ────────────────────────────────────────────────────────
 apt-get update
@@ -85,7 +97,7 @@ install_from_source() {
 
 if ts_has_arm64; then install_from_packages; else install_from_source; fi
 
-# ── Cluster on the SSD ───────────────────────────────────────────────────────
+# ── Cluster on the data filesystem ───────────────────────────────────────────
 EXISTING_DIR=$(pg_lsclusters -h | awk -v v="$PG_VERSION" '$1 == v && $2 == "main" {print $6}')
 if [[ -z "$EXISTING_DIR" ]]; then
     install -d -o postgres -g postgres -m 700 "$PG_DATA_MOUNT/postgresql" "$PG_DATA_MOUNT/postgresql/$PG_VERSION"

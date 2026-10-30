@@ -21,36 +21,31 @@ unplugged.
 ## Database on the Raspberry Pi
 
 `compose.yaml` is for laptop development only. On the Pi, TimescaleDB runs natively (PostgreSQL 17
-from PGDG, TimescaleDB from Timescale's apt repo) on port `5432`. Its data directory lives on a
-dedicated SSD partition, so a full database cannot fill the root filesystem.
+from PGDG, TimescaleDB from Timescale's apt repo) on port `5432`. The CM5's 29 GB eMMC is the only
+storage, so the data directory lives in a fixed-size ext4 image on it, mounted at `/mnt/pgdata`. A
+full database then fills the image, not the root filesystem.
 
-1. Create an ext4 partition on the SSD for the database and mount it at `/mnt/pgdata` through
-   `/etc/fstab`, for example:
-
-   ```sh
-   sudo mkfs.ext4 -L pgdata /dev/nvme0n1p3   # the new, empty partition
-   sudo mkdir -p /mnt/pgdata
-   echo 'LABEL=pgdata /mnt/pgdata ext4 defaults,noatime 0 2' | sudo tee -a /etc/fstab
-   sudo systemctl daemon-reload && sudo mount /mnt/pgdata
-   ```
-
-2. Run the install script:
+1. Run the install script:
 
    ```sh
    sudo scripts/pi/install-timescaledb.sh
    ```
 
-   It refuses to continue unless `/mnt/pgdata` is a separate, fstab-mounted filesystem. It then
-   creates cluster `17/main` in `/mnt/pgdata/postgresql/17/main`, runs `timescaledb-tune`, creates
-   the `telemetry` role and database with a random password, enables the `timescaledb` extension, and
-   checks that the Timescale background workers are running. Re-running it is safe and keeps the
-   existing password.
+   If nothing is mounted at `/mnt/pgdata`, it creates `/var/lib/pgdata.img` (8 GB), adds it to
+   `/etc/fstab` and mounts it. It then creates cluster `17/main` in
+   `/mnt/pgdata/postgresql/17/main`, runs `timescaledb-tune`, creates the `telemetry` role and
+   database with a random password, enables the `timescaledb` extension, and checks that the
+   Timescale background workers are running. Re-running it is safe and keeps the existing password.
 
-   Optional environment variables: `TELEMETRY_DB_PASSWORD` to choose the password, `LAN_CIDR` (e.g.
-   `192.168.1.0/24`) to accept `telemetry` logins from the LAN, `PG_DATA_MOUNT` to use another mount
-   point.
+   Optional environment variables: `PG_DATA_SIZE` for the image size (e.g. `12G`),
+   `TELEMETRY_DB_PASSWORD` to choose the password, `LAN_CIDR` (e.g. `192.168.1.0/24`) to accept
+   `telemetry` logins from the LAN.
 
-3. The connection string is written to `/etc/telemetry/database.env` (root-only):
+   To use external storage instead, mount an ext4 partition from it at `/mnt/pgdata` through
+   `/etc/fstab` before running the script; it then skips the image. The script refuses any
+   `/mnt/pgdata` that is on the root filesystem.
+
+2. The connection string is written to `/etc/telemetry/database.env` (root-only):
 
    ```sh
    set -a; . <(sudo cat /etc/telemetry/database.env); set +a
